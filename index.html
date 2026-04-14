@@ -1,6 +1,120 @@
-<iframe src="https://seuusuario.github.io/rastreio" 
-  width="100%" 
-  height="600" 
-  frameborder="0" 
-  style="border:none; width:100%; min-height:600px;">
-</iframe>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rastreamento de Pedido</title>
+</head>
+<body style="margin:0;padding:0;font-family:sans-serif;background:#f5f5f5;">
+
+<div id="rt-wrap" style="max-width:680px;margin:0 auto;padding:2rem 1rem;font-family:sans-serif;color:#1a1a1a;">
+
+  <h2 style="text-align:center;font-size:22px;font-weight:600;margin-bottom:8px;">Rastreamento de pedido</h2>
+  <p style="text-align:center;color:#666;margin-bottom:2rem;font-size:15px;">Digite o código de rastreio para acompanhar a sua entrega</p>
+
+  <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
+    <div style="display:flex;gap:10px;">
+      <input id="rt-codigo" type="text" placeholder="Ex: BR123456789BR" maxlength="30"
+        style="flex:1;font-size:15px;padding:0 14px;height:46px;border:1px solid #ccc;border-radius:8px;outline:none;" />
+      <button id="rt-btn" onclick="rtRastrear()"
+        style="height:46px;padding:0 24px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">
+        Rastrear
+      </button>
+    </div>
+    <p style="font-size:13px;color:#888;margin-top:10px;">O código de rastreio está no e-mail de confirmação do pedido.</p>
+  </div>
+
+  <div id="rt-resultado"></div>
+</div>
+
+<script>
+var PROXY = "https://api.allorigins.win/get?url=";
+var BASE_URL = "https://www.linkcorreios.com.br/?id=";
+
+function rtRastrear() {
+  var codigo = document.getElementById("rt-codigo").value.trim().toUpperCase();
+  if (!codigo) return;
+  var el = document.getElementById("rt-resultado");
+  el.innerHTML = '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:1.5rem;text-align:center;color:#888;font-size:14px;">Consultando rastreio...</div>';
+  document.getElementById("rt-btn").disabled = true;
+  document.getElementById("rt-btn").style.background = "#ccc";
+
+  var url = PROXY + encodeURIComponent(BASE_URL + codigo);
+  fetch(url)
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var html = data.contents || "";
+      var parser = new DOMParser();
+      var doc = parser.parseFromString(html, "text/html");
+      var eventos = [];
+      var lis = doc.querySelectorAll("ul li");
+      lis.forEach(function(li){
+        var text = li.innerText || li.textContent || "";
+        if (text.trim().length > 10) {
+          var lines = text.trim().split("\n").map(function(l){ return l.trim(); }).filter(Boolean);
+          eventos.push({ status: lines[0]||"", local: lines[1]||"", data: lines[2]||"" });
+        }
+      });
+      if (eventos.length === 0) {
+        el.innerHTML = rtFallback(codigo);
+      } else {
+        el.innerHTML = rtResultado(codigo, eventos);
+      }
+      document.getElementById("rt-btn").disabled = false;
+      document.getElementById("rt-btn").style.background = "#185FA5";
+    })
+    .catch(function(){
+      el.innerHTML = rtFallback(codigo);
+      document.getElementById("rt-btn").disabled = false;
+      document.getElementById("rt-btn").style.background = "#185FA5";
+    });
+}
+
+function rtResultado(codigo, eventos) {
+  var ultimo = eventos[0];
+  var s = (ultimo.status||"").toLowerCase();
+  var badgeColor = "#E6F1FB", badgeText2 = "#185FA5", badgeLabel = "Em trânsito";
+  if (s.indexOf("entregue") > -1) { badgeColor="#EAF3DE"; badgeText2="#3B6D11"; badgeLabel="Entregue"; }
+  else if (s.indexOf("postado") > -1 || s.indexOf("aguardando") > -1) { badgeColor="#FAEEDA"; badgeText2="#854F0B"; badgeLabel="Postado"; }
+
+  var tl = eventos.map(function(ev, i){
+    var dotStyle = i===0
+      ? "width:12px;height:12px;border-radius:50%;background:#185FA5;border:2px solid #0C447C;margin-top:4px;flex-shrink:0;"
+      : "width:12px;height:12px;border-radius:50%;background:#B5D4F4;border:2px solid #378ADD;margin-top:4px;flex-shrink:0;";
+    return '<div style="display:flex;gap:14px;">'
+      + '<div style="display:flex;flex-direction:column;align-items:center;width:26px;flex-shrink:0;">'
+      + '<div style="' + dotStyle + '"></div>'
+      + (i < eventos.length-1 ? '<div style="width:2px;flex:1;background:#e8e8e8;min-height:18px;"></div>' : '')
+      + '</div>'
+      + '<div style="padding-bottom:18px;flex:1;">'
+      + '<div style="font-size:14px;font-weight:600;">' + ev.status + '</div>'
+      + (ev.local ? '<div style="font-size:13px;color:#666;margin-top:2px;">' + ev.local + '</div>' : '')
+      + (ev.data  ? '<div style="font-size:12px;color:#999;margin-top:2px;">'  + ev.data  + '</div>' : '')
+      + '</div></div>';
+  }).join('');
+
+  return '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:1.5rem;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:8px;">'
+    + '<div style="font-size:13px;color:#666;">Código: <b style="color:#1a1a1a;font-family:monospace;">' + codigo + '</b></div>'
+    + '<span style="font-size:12px;font-weight:600;padding:4px 12px;border-radius:6px;background:' + badgeColor + ';color:' + badgeText2 + ';">' + badgeLabel + '</span>'
+    + '</div>'
+    + '<div>' + tl + '</div>'
+    + '</div>';
+}
+
+function rtFallback(codigo) {
+  return '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:1.5rem;">'
+    + '<p style="font-size:14px;color:#555;line-height:1.7;margin-bottom:12px;">Não foi possível consultar automaticamente. Clique abaixo para rastrear diretamente no site dos Correios:</p>'
+    + '<a href="https://www.correios.com.br/rastreamento?objetos=' + codigo + '" target="_blank" '
+    + 'style="display:inline-block;padding:10px 22px;background:#185FA5;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">'
+    + 'Ver nos Correios</a>'
+    + '</div>';
+}
+
+document.getElementById("rt-codigo").addEventListener("keydown", function(e){
+  if (e.key === "Enter") rtRastrear();
+});
+</script>
+
+</body>
+</html>
