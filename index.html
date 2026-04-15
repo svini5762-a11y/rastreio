@@ -14,7 +14,7 @@
 
   <div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
     <div style="display:flex;gap:10px;">
-      <input id="rt-codigo" type="text" placeholder="Ex: BR123456789BR" maxlength="30"
+      <input id="rt-codigo" type="text" placeholder="Ex: BR123456789BR" maxlength="40"
         style="flex:1;font-size:15px;padding:0 14px;height:46px;border:1px solid #ccc;border-radius:8px;outline:none;" />
       <button id="rt-btn" onclick="rtRastrear()"
         style="height:46px;padding:0 24px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">
@@ -28,8 +28,7 @@
 </div>
 
 <script>
-var PROXY = "https://api.allorigins.win/get?url=";
-var BASE_URL = "https://www.linkcorreios.com.br/?id=";
+var API_KEY = "3FD9FCEA7FFF546B18C4C6884458785C";
 
 function rtRastrear() {
   var codigo = document.getElementById("rt-codigo").value.trim().toUpperCase();
@@ -39,45 +38,71 @@ function rtRastrear() {
   document.getElementById("rt-btn").disabled = true;
   document.getElementById("rt-btn").style.background = "#ccc";
 
-  var url = PROXY + encodeURIComponent(BASE_URL + codigo);
-  fetch(url)
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      var html = data.contents || "";
-      var parser = new DOMParser();
-      var doc = parser.parseFromString(html, "text/html");
-      var eventos = [];
-      var lis = doc.querySelectorAll("ul li");
-      lis.forEach(function(li){
-        var text = li.innerText || li.textContent || "";
-        if (text.trim().length > 10) {
-          var lines = text.trim().split("\n").map(function(l){ return l.trim(); }).filter(Boolean);
-          eventos.push({ status: lines[0]||"", local: lines[1]||"", data: lines[2]||"" });
-        }
-      });
-      if (eventos.length === 0) {
-        el.innerHTML = rtFallback(codigo);
-      } else {
-        el.innerHTML = rtResultado(codigo, eventos);
-      }
-      document.getElementById("rt-btn").disabled = false;
-      document.getElementById("rt-btn").style.background = "#185FA5";
-    })
-    .catch(function(){
-      el.innerHTML = rtFallback(codigo);
-      document.getElementById("rt-btn").disabled = false;
-      document.getElementById("rt-btn").style.background = "#185FA5";
-    });
+  fetch("https://api.17track.net/track/v2.2/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "17token": API_KEY },
+    body: JSON.stringify([{ "number": codigo }])
+  })
+  .then(function(){ return buscarRastreio(codigo, el); })
+  .catch(function(){ return buscarRastreio(codigo, el); });
 }
 
-function rtResultado(codigo, eventos) {
-  var ultimo = eventos[0];
-  var s = (ultimo.status||"").toLowerCase();
-  var badgeColor = "#E6F1FB", badgeText2 = "#185FA5", badgeLabel = "Em trânsito";
-  if (s.indexOf("entregue") > -1) { badgeColor="#EAF3DE"; badgeText2="#3B6D11"; badgeLabel="Entregue"; }
-  else if (s.indexOf("postado") > -1 || s.indexOf("aguardando") > -1) { badgeColor="#FAEEDA"; badgeText2="#854F0B"; badgeLabel="Postado"; }
+function buscarRastreio(codigo, el) {
+  fetch("https://api.17track.net/track/v2.2/gettrackinfo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "17token": API_KEY },
+    body: JSON.stringify([{ "number": codigo }])
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(data){
+    var item = data.data && data.data.accepted && data.data.accepted[0];
+    if (!item || !item.track) {
+      el.innerHTML = rtFallback(codigo);
+      rtResetar();
+      return;
+    }
+    var track = item.track;
+    var eventos = track.tracking && track.tracking.providers
+      ? track.tracking.providers.reduce(function(acc, p){ return acc.concat(p.events || []); }, [])
+      : [];
+
+    if (eventos.length === 0) {
+      el.innerHTML = rtFallback(codigo);
+      rtResetar();
+      return;
+    }
+
+    eventos.sort(function(a, b){ return new Date(b.time_iso) - new Date(a.time_iso); });
+    el.innerHTML = rtResultado(codigo, track.e, eventos);
+    rtResetar();
+  })
+  .catch(function(){
+    el.innerHTML = rtFallback(codigo);
+    rtResetar();
+  });
+}
+
+function rtResetar() {
+  document.getElementById("rt-btn").disabled = false;
+  document.getElementById("rt-btn").style.background = "#185FA5";
+}
+
+var statusMap = {
+  0: { label: "Não encontrado", color: "#F1EFE8", textColor: "#5F5E5A" },
+  10: { label: "Informação recebida", color: "#FAEEDA", textColor: "#854F0B" },
+  20: { label: "Em trânsito", color: "#E6F1FB", textColor: "#185FA5" },
+  30: { label: "Saiu para entrega", color: "#E6F1FB", textColor: "#185FA5" },
+  35: { label: "Tentativa de entrega", color: "#FAEEDA", textColor: "#854F0B" },
+  40: { label: "Entregue", color: "#EAF3DE", textColor: "#3B6D11" },
+  50: { label: "Exceção", color: "#FCEBEB", textColor: "#A32D2D" },
+  60: { label: "Expirado", color: "#FCEBEB", textColor: "#A32D2D" }
+};
+
+function rtResultado(codigo, statusCode, eventos) {
+  var s = statusMap[statusCode] || statusMap[20];
 
   var tl = eventos.map(function(ev, i){
+    var data = ev.time_iso ? new Date(ev.time_iso).toLocaleString("pt-BR") : "";
     var dotStyle = i===0
       ? "width:12px;height:12px;border-radius:50%;background:#185FA5;border:2px solid #0C447C;margin-top:4px;flex-shrink:0;"
       : "width:12px;height:12px;border-radius:50%;background:#B5D4F4;border:2px solid #378ADD;margin-top:4px;flex-shrink:0;";
@@ -87,16 +112,16 @@ function rtResultado(codigo, eventos) {
       + (i < eventos.length-1 ? '<div style="width:2px;flex:1;background:#e8e8e8;min-height:18px;"></div>' : '')
       + '</div>'
       + '<div style="padding-bottom:18px;flex:1;">'
-      + '<div style="font-size:14px;font-weight:600;">' + ev.status + '</div>'
-      + (ev.local ? '<div style="font-size:13px;color:#666;margin-top:2px;">' + ev.local + '</div>' : '')
-      + (ev.data  ? '<div style="font-size:12px;color:#999;margin-top:2px;">'  + ev.data  + '</div>' : '')
+      + '<div style="font-size:14px;font-weight:600;">' + (ev.description || "") + '</div>'
+      + (ev.location ? '<div style="font-size:13px;color:#666;margin-top:2px;">' + ev.location + '</div>' : '')
+      + (data ? '<div style="font-size:12px;color:#999;margin-top:2px;">' + data + '</div>' : '')
       + '</div></div>';
   }).join('');
 
   return '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:1.5rem;">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:8px;">'
     + '<div style="font-size:13px;color:#666;">Código: <b style="color:#1a1a1a;font-family:monospace;">' + codigo + '</b></div>'
-    + '<span style="font-size:12px;font-weight:600;padding:4px 12px;border-radius:6px;background:' + badgeColor + ';color:' + badgeText2 + ';">' + badgeLabel + '</span>'
+    + '<span style="font-size:12px;font-weight:600;padding:4px 12px;border-radius:6px;background:' + s.color + ';color:' + s.textColor + ';">' + s.label + '</span>'
     + '</div>'
     + '<div>' + tl + '</div>'
     + '</div>';
@@ -104,10 +129,10 @@ function rtResultado(codigo, eventos) {
 
 function rtFallback(codigo) {
   return '<div style="background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:1.5rem;">'
-    + '<p style="font-size:14px;color:#555;line-height:1.7;margin-bottom:12px;">Não foi possível consultar automaticamente. Clique abaixo para rastrear diretamente no site dos Correios:</p>'
-    + '<a href="https://www.correios.com.br/rastreamento?objetos=' + codigo + '" target="_blank" '
+    + '<p style="font-size:14px;color:#555;line-height:1.7;margin-bottom:12px;">Não foi possível consultar automaticamente. Clique abaixo para rastrear diretamente no 17track:</p>'
+    + '<a href="https://www.17track.net/pt/track#nums=' + codigo + '" target="_blank" '
     + 'style="display:inline-block;padding:10px 22px;background:#185FA5;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">'
-    + 'Ver nos Correios</a>'
+    + 'Ver no 17track</a>'
     + '</div>';
 }
 
