@@ -28,7 +28,7 @@
 </div>
 
 <script>
-var API_KEY = "3FD9FCEA7FFF546B18C4C6884458785C";
+var PROXY = "https://rastreio-proxy.svini5762.workers.dev";
 
 function rtRastrear() {
   var codigo = document.getElementById("rt-codigo").value.trim().toUpperCase();
@@ -38,9 +38,9 @@ function rtRastrear() {
   document.getElementById("rt-btn").disabled = true;
   document.getElementById("rt-btn").style.background = "#ccc";
 
-  fetch("https://api.17track.net/track/v2.2/register", {
+  fetch(PROXY + "?endpoint=register", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "17token": API_KEY },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify([{ "number": codigo }])
   })
   .then(function(){ return buscarRastreio(codigo, el); })
@@ -48,9 +48,9 @@ function rtRastrear() {
 }
 
 function buscarRastreio(codigo, el) {
-  fetch("https://api.17track.net/track/v2.2/gettrackinfo", {
+  return fetch(PROXY + "?endpoint=gettrackinfo", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "17token": API_KEY },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify([{ "number": codigo }])
   })
   .then(function(r){ return r.json(); })
@@ -88,14 +88,14 @@ function rtResetar() {
 }
 
 var statusMap = {
-  0: { label: "Não encontrado", color: "#F1EFE8", textColor: "#5F5E5A" },
-  10: { label: "Informação recebida", color: "#FAEEDA", textColor: "#854F0B" },
-  20: { label: "Em trânsito", color: "#E6F1FB", textColor: "#185FA5" },
-  30: { label: "Saiu para entrega", color: "#E6F1FB", textColor: "#185FA5" },
+  0:  { label: "Não encontrado",       color: "#F1EFE8", textColor: "#5F5E5A" },
+  10: { label: "Informação recebida",  color: "#FAEEDA", textColor: "#854F0B" },
+  20: { label: "Em trânsito",          color: "#E6F1FB", textColor: "#185FA5" },
+  30: { label: "Saiu para entrega",    color: "#E6F1FB", textColor: "#185FA5" },
   35: { label: "Tentativa de entrega", color: "#FAEEDA", textColor: "#854F0B" },
-  40: { label: "Entregue", color: "#EAF3DE", textColor: "#3B6D11" },
-  50: { label: "Exceção", color: "#FCEBEB", textColor: "#A32D2D" },
-  60: { label: "Expirado", color: "#FCEBEB", textColor: "#A32D2D" }
+  40: { label: "Entregue",             color: "#EAF3DE", textColor: "#3B6D11" },
+  50: { label: "Exceção",              color: "#FCEBEB", textColor: "#A32D2D" },
+  60: { label: "Expirado",             color: "#FCEBEB", textColor: "#A32D2D" }
 };
 
 function rtResultado(codigo, statusCode, eventos) {
